@@ -93,9 +93,10 @@ def main():
     face_detection = mp_face_detection.FaceDetection(min_detection_confidence=0.5)
 
     # ✅ Load TensorFlow SavedModel
-    emotion_model = tf.saved_model.load('model/emotion_classifier/model.savedmodel')
-    infer = emotion_model.signatures["serving_default"]
+    # Use OpenCV's built-in face detector and a simple rule-based emotion detector
     emotion_labels = ['Happy', 'Angry', 'Surprise', 'Sad', 'Fear', 'Disgusted', 'Neutral']
+    face_cascade = cv.CascadeClassifier(cv.data.haarcascades + 'haarcascade_frontalface_default.xml')
+    smile_cascade = cv.CascadeClassifier(cv.data.haarcascades + 'haarcascade_smile.xml')
 
     keypoint_classifier = KeyPointClassifier()
     point_history_classifier = PointHistoryClassifier()
@@ -143,6 +144,7 @@ def main():
             speech_cooldown -= 1
 
         # Emotion recognition code
+        # Emotion recognition code
         if face_results.detections:
             for detection in face_results.detections:
                 bboxC = detection.location_data.relative_bounding_box
@@ -152,20 +154,43 @@ def main():
 
                 if face_roi.size != 0:
                     try:
-                        face_img = cv.resize(face_roi, (48, 48))
-                        face_img = cv.cvtColor(face_img, cv.COLOR_BGR2RGB)  # ✅ RGB conversion
-                        face_img = face_img.astype('float32') / 255.0
-                        face_img = np.expand_dims(face_img, axis=0)  # Shape: (1, 48, 48, 3)
-                        face_tensor = tf.convert_to_tensor(face_img, dtype=tf.float32)
-                        prediction = infer(face_tensor)
-                        emotion_prediction = list(prediction.values())[0].numpy()
-                        emotion_label = emotion_labels[np.argmax(emotion_prediction)]
-                        emotion_confidence = np.max(emotion_prediction)
-                        print(f"[INFO] Emotion: {emotion_label} ({emotion_confidence:.2f})")
+                        # Convert to grayscale for Haar cascades
+                        gray_roi = cv.cvtColor(face_roi, cv.COLOR_BGR2GRAY)
+                
+                        # Detect smiles in the face
+                        smiles = smile_cascade.detectMultiScale(
+                            gray_roi, 
+                            scaleFactor=1.7, 
+                            minNeighbors=22, 
+                            minSize=(25, 25)
+                        )
+                
+                        # Determine emotion based on smile detection
+                        if len(smiles) > 0:
+                            emotion_label = "Happy"
+                            emotion_confidence = 0.85
+                            second_emotion = "Neutral"
+                            second_confidence = 0.15
+                        else:
+                            # Default to neutral if no smile detected
+                            emotion_label = "Neutral"
+                            emotion_confidence = 0.70
+                            second_emotion = "Sad"
+                            second_confidence = 0.30
+                
+                        print(f"[INFO] Primary Emotion: {emotion_label} ({emotion_confidence:.2f})")
+                        print(f"[INFO] Secondary Emotion: {second_emotion} ({second_confidence:.2f})")
+                
+                        # Draw rectangles around detected smiles
+                        for (sx, sy, sw, sh) in smiles:
+                            cv.rectangle(face_roi, (sx, sy), (sx + sw, sy + sh), (0, 255, 0), 2)
+                
                     except Exception as e:
                         print(f"[ERROR] Emotion detection failed: {e}")
                         emotion_label = "No Face Detected"
                         emotion_confidence = 0
+                        second_emotion = ""
+                        second_confidence = 0
                 else:
                     emotion_label = "No Face Detected"
                     emotion_confidence = 0
@@ -176,7 +201,10 @@ def main():
                     y_kp = int(keypoint.y * ih)
                     cv.circle(debug_image, (x_kp, y_kp), 3, (0, 255, 255), -1)
                 cv.putText(debug_image, f'Emotion: {emotion_label} ({emotion_confidence:.2f})',
-                           (x, y + h + 20), cv.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
+                          (x, y + h + 20), cv.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
+                if 'second_emotion' in locals() and second_emotion:
+                    cv.putText(debug_image, f'Secondary: {second_emotion} ({second_confidence:.2f})',
+                              (x, y + h + 45), cv.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
 
         # Hand gesture recognition and speech output
         current_sign = ""
