@@ -167,17 +167,48 @@ def main():
                 
                         # Determine emotion based on smile detection
                         if len(smiles) > 0:
-                            emotion_label = "Happy"
-                            emotion_confidence = 0.85
-                            second_emotion = "Neutral"
-                            second_confidence = 0.15
+                           smile_area = sum(w * h for (_, _, w, h) in smiles)
+                           face_area = face_roi.shape[0] * face_roi.shape[1]
+                           smile_ratio = smile_area / face_area if face_area > 0 else 0
+                           if smile_ratio > 0.15:
+                               emotion_label = "Excited"
+                               emotion_confidence = 0.85
+                               second_emotion = "Happy"
+                               second_confidence = 0.15
+                           else:
+                                emotion_label = "Happy"
+                                emotion_confidence = 0.80
+                                second_emotion = "Excited"
+                                second_confidence = 0.20
                         else:
-                            # Default to neutral if no smile detected
-                            emotion_label = "Neutral"
-                            emotion_confidence = 0.70
-                            second_emotion = "Sad"
-                            second_confidence = 0.30
-                
+                            gray_intensity = np.mean(gray_roi) if gray_roi.size > 0 else 128 
+                            h, w = gray_roi.shape if gray_roi.size > 0 else (0, 0)
+                            eyebrow_region = gray_roi[0:int(h/3), :] if h > 0 else np.array([]) 
+                            eyebrow_intensity = np.mean(eyebrow_region) if eyebrow_region.size > 0 else 0
+                            mouth_region = gray_roi[int(2*h/3):h, :] if h > 0 else np.array([])
+                            mouth_intensity = np.mean(mouth_region) if mouth_region.size > 0 else 0
+                            mouth_variance = np.var(mouth_region) if mouth_region.size > 0 else 0
+                            if eyebrow_intensity < gray_intensity * 0.9 and mouth_variance > 1500:
+                                 emotion_label = "Angry"
+                                 emotion_confidence = 0.75
+                                 second_emotion = "Disgusted"
+                                 second_confidence = 0.25
+                            elif mouth_variance > 1200 and mouth_intensity < gray_intensity * 0.9:
+                                emotion_label = "Crying"
+                                emotion_confidence = 0.70
+                                second_emotion = "Sad"
+                                second_confidence = 0.30
+                            elif gray_intensity < 120:
+                                emotion_label = "Sad"
+                                emotion_confidence = 0.65
+                                second_emotion = "Neutral"
+                                second_confidence = 0.35
+                            else:
+                                emotion_label = "Neutral"
+                                emotion_confidence = 0.70
+                                second_emotion = "Sad"
+                                second_confidence = 0.30
+                        
                         print(f"[INFO] Primary Emotion: {emotion_label} ({emotion_confidence:.2f})")
                         print(f"[INFO] Secondary Emotion: {second_emotion} ({second_confidence:.2f})")
                 
